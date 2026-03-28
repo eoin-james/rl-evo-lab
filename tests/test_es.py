@@ -43,8 +43,8 @@ def test_worker_episode_returns_transitions():
     idn = InverseDynamicsNetwork(cfg, device)
     novelty = EpisodicNovelty(cfg.knn_k)
 
-    # Build base params from a fresh network
-    net = QNetwork(cfg.obs_dim, cfg.act_dim)
+    # Build base params from a fresh network matching the config's hidden_dim
+    net = QNetwork(cfg.obs_dim, cfg.act_dim, hidden=cfg.hidden_dim)
     base_params = net.get_flat_params()
 
     result = run_worker_episode(
@@ -55,7 +55,7 @@ def test_worker_episode_returns_transitions():
         cfg=cfg,
         idn=idn,
         novelty=novelty,
-        beta=0.0,          # augmented == extrinsic when beta=0
+        effective_beta=0.0,  # augmented == extrinsic when beta=0
         noise_sign=+1,
         device=device,
     )
