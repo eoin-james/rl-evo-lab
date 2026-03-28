@@ -103,7 +103,8 @@ def _any_novelty(paths: dict[str, list[Path]]) -> bool:
 
 
 def _detect_env(csv_list: list[Path]) -> str:
-    return csv_list[0].parent.name.split("__")[0]
+    # path is {results_dir}/{env_id}/seed{N}__{hash}/metrics.csv
+    return csv_list[0].parent.parent.name
 
 # ---------------------------------------------------------------------------
 # compare() — the one public plotting function

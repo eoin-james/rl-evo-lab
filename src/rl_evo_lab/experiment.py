@@ -35,7 +35,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 
 from rl_evo_lab.train import train
 from rl_evo_lab.utils.config import EDERConfig, make_config
-from rl_evo_lab.utils.logging import _run_id
+from rl_evo_lab.utils.logging import _run_dir, _run_key
 
 _console = Console()
 _RUNS_DIR = "runs"
@@ -87,10 +87,10 @@ def _is_done(run_dir: Path) -> bool:
 
 def _train_worker(args: tuple) -> tuple[str, Path]:
     cfg, q = args
-    run_dir = Path(_RUNS_DIR) / _run_id(cfg)
+    run_dir = _run_dir(cfg, _RUNS_DIR)
     if not _is_done(run_dir):
         train(cfg, log_dir=_RUNS_DIR, verbose=False, progress_queue=q)
-    return _run_id(cfg), run_dir / "metrics.csv"
+    return _run_key(cfg), run_dir / "metrics.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +151,7 @@ class Experiment:
         for i, cond in enumerate(self.conditions, 1):
             pending = [
                 cfg for cfg in self._cfgs(cond)
-                if not _is_done(Path(results_dir) / _run_id(cfg))
+                if not _is_done(_run_dir(cfg, results_dir))
             ]
 
             _console.rule(f"[bold]{cond.label}[/bold]  ({i}/{len(self.conditions)})")
@@ -188,7 +188,7 @@ class Experiment:
         """
         cond = self._condition(label)
         cfg = self._make_cfg(cond, seed)
-        run_dir = Path(results_dir) / _run_id(cfg)
+        run_dir = _run_dir(cfg, results_dir)
 
         if force and run_dir.exists():
             shutil.rmtree(run_dir)
@@ -243,7 +243,7 @@ class Experiment:
     def _paths(self, results_dir: str = _RUNS_DIR) -> dict[str, list[Path]]:
         return {
             cond.label: [
-                Path(results_dir) / _run_id(self._make_cfg(cond, s)) / "metrics.csv"
+                _run_dir(self._make_cfg(cond, s), results_dir) / "metrics.csv"
                 for s in self.seeds
             ]
             for cond in self.conditions
@@ -253,14 +253,14 @@ class Experiment:
         all_ids = sorted(str(p.parent.name) for csvs in paths.values() for p in csvs)
         digest = hashlib.sha1("\n".join(all_ids).encode()).hexdigest()[:8]
         seed_key = "_".join(str(s) for s in sorted(self.seeds))
-        d = Path(results_dir) / f"compare__{self.name}__{self.env}__seeds_{seed_key}__{digest}"
+        d = Path(results_dir) / "compare" / f"{self.name}__{self.env}__seeds_{seed_key}__{digest}"
         d.mkdir(parents=True, exist_ok=True)
         return d
 
     def _delete_runs(self, results_dir: str) -> None:
         for cond in self.conditions:
             for cfg in self._cfgs(cond):
-                run_dir = Path(results_dir) / _run_id(cfg)
+                run_dir = _run_dir(cfg, results_dir)
                 if run_dir.exists():
                     shutil.rmtree(run_dir)
 
@@ -281,7 +281,9 @@ class Experiment:
             TextColumn("{task.fields[stats]}"),
         )
         task_ids = {
-            _run_id(cfg): progress.add_task(f"seed={cfg.seed}", total=cfg.total_episodes, stats="")
+            _run_key(cfg): progress.add_task(
+                f"seed={cfg.seed}", total=cfg.total_episodes, stats=""
+            )
             for cfg in pending
         }
 

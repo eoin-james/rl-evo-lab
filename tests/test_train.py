@@ -13,4 +13,7 @@ def test_short_run(tmp_path: Path):
         seed=0,
     )
     train(cfg, log_dir=str(tmp_path))
-    assert (tmp_path / next(tmp_path.iterdir()).name / "metrics.csv").exists()
+    # structure: {log_dir}/{env_id}/seed{N}__{hash}/metrics.csv
+    env_dir = next(tmp_path.iterdir())
+    run_dir = next(env_dir.iterdir())
+    assert (run_dir / "metrics.csv").exists()

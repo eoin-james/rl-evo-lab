@@ -13,11 +13,16 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 from rl_evo_lab.utils.config import EDERConfig
 
 
-def _run_id(cfg: EDERConfig) -> str:
-    """Deterministic run ID derived from config. Same config → same ID."""
-    key = {f.name: getattr(cfg, f.name) for f in fields(cfg) if f.name not in ("use_wandb", "wandb_project")}
-    digest = hashlib.sha1(json.dumps(key, sort_keys=True).encode()).hexdigest()[:8]
-    return f"{cfg.env_id}__seed{cfg.seed}__b{cfg.beta}__n{cfg.es_n_workers}__{digest}"
+def _run_key(cfg: EDERConfig) -> str:
+    """Stable run key: seed{N}__{8-char hash of all HPs}."""
+    hp = {f.name: getattr(cfg, f.name) for f in fields(cfg) if f.name not in ("use_wandb", "wandb_project")}
+    digest = hashlib.sha1(json.dumps(hp, sort_keys=True).encode()).hexdigest()[:8]
+    return f"seed{cfg.seed}__{digest}"
+
+
+def _run_dir(cfg: EDERConfig, results_dir: str | Path = "runs") -> Path:
+    """Canonical run directory: {results_dir}/{env_id}/seed{N}__{hash}/"""
+    return Path(results_dir) / cfg.env_id / _run_key(cfg)
 
 
 @dataclass
@@ -44,9 +49,9 @@ class RunLogger:
         progress_queue: Queue | None = None,
     ) -> None:
         self.cfg = cfg
-        self.run_id = _run_id(cfg)
-        run_dir = Path(log_dir) / self.run_id
+        run_dir = _run_dir(cfg, log_dir)
         run_dir.mkdir(parents=True, exist_ok=True)
+        self.run_id = _run_key(cfg)  # kept for progress queue messages
 
         self._csv_path = run_dir / "metrics.csv"
         self._csv_file = self._csv_path.open("a", newline="")
