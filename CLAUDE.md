@@ -69,3 +69,30 @@ Always seed everything and log σ and β per run.
 - Badia et al. (2020) — Never Give Up (NGU)
 - Mnih et al. (2015) — DQN
 - Lillicrap et al. (2015) — DDPG
+
+---
+
+## rl-core
+
+This repo does **not yet use rl-core** — it has its own implementations of replay buffer, DQN network, logging, and seeding. These are candidates for migration:
+
+| Local impl | rl-core equivalent |
+|---|---|
+| `src/rl_evo_lab/buffer/replay_buffer.py` | `rl_core.buffers.ReplayBuffer` |
+| `src/rl_evo_lab/learner/network.py` (QNetwork + FlatParams) | `rl_core.algorithms.dqn.QNetwork` |
+| `src/rl_evo_lab/utils/seeding.py` | `rl_core.utils.seed_everything` |
+| `src/rl_evo_lab/utils/logging.py` (RunLogger) | `rl_core.experiments.RunManager` + `NamespacedLogger` |
+
+Before migrating, verify that rl-core's version covers the local usage. The local `ReplayBuffer` has a `diversity_metric()` method that rl-core's does not — open a change request if that's needed.
+
+To add rl-core as a dependency:
+```toml
+"rl-core @ git+https://github.com/eoin-james/rl-core.git@v0.2.0"
+```
+
+Key metric separation for this repo (use `NamespacedLogger`):
+- **`algo/`**: `learner_loss`, `q_mean`, `q_target_mean`
+- **`research/`**: `idn_loss`, `effective_beta`, `buffer_diversity`, `actor_augmented_reward`
+- **bare**: `actor_extrinsic_reward`, `learner_eval_reward`, `episode`, `sync`
+
+Logging `actor_extrinsic_reward` and `learner_eval_reward` in the bare namespace (not algo/ or research/) is intentional — they are the primary outcome metrics and should be immediately visible.
