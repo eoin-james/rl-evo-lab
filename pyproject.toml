@@ -15,6 +15,7 @@ dependencies = [
     "matplotlib (>=3.10.8,<4.0.0)",
     "pandas (>=3.0.1,<4.0.0)",
     "rich (>=14.3.3,<15.0.0)",
+    "rl-core @ git+https://github.com/eoin-james/rl-core.git@v0.2.0",
 ]
 
 [project.optional-dependencies]

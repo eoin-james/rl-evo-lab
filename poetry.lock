@@ -2146,6 +2146,28 @@ pygments = ">=2.13.0,<3.0.0"
 jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
+name = "rl-core"
+version = "0.1.0"
+description = "Shared infrastructure for reinforcement learning research"
+optional = false
+python-versions = ">=3.12"
+groups = ["main"]
+files = []
+develop = false
+
+[package.dependencies]
+numpy = ">=1.26"
+pyyaml = ">=6.0"
+torch = ">=2.0"
+wandb = ">=0.15"
+
+[package.source]
+type = "git"
+url = "https://github.com/eoin-james/rl-core.git"
+reference = "v0.2.0"
+resolved_reference = "3da9fe4d73289fae4d171901b82e3f573d2e200a"
+
+[[package]]
 name = "sentry-sdk"
 version = "2.56.0"
 description = "Python client for Sentry (https://sentry.io)"
@@ -2516,4 +2538,4 @@ mujoco = ["gymnasium"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "aa6fdfa4eb336e87f7cad3b4a3dd293aba8c0a77b0042af9c5b9b8bf81d39d01"
+content-hash = "0fb8d269d90c0d04256cd25b88e878bb14feead404cb9a78233fd4c3238d43e3"
