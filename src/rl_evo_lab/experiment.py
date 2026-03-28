@@ -35,7 +35,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 
 from rl_evo_lab.train import train
 from rl_evo_lab.utils.config import EDERConfig, make_config
-from rl_evo_lab.utils.logging import _run_dir, _run_key
+from rl_evo_lab.utils.logging import _run_hash
 
 _console = Console()
 _RUNS_DIR = "runs"
@@ -86,11 +86,10 @@ def _is_done(run_dir: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 def _train_worker(args: tuple) -> tuple[str, Path]:
-    cfg, q = args
-    run_dir = _run_dir(cfg, _RUNS_DIR)
+    cfg, run_dir, q = args
     if not _is_done(run_dir):
-        train(cfg, log_dir=_RUNS_DIR, verbose=False, progress_queue=q)
-    return _run_key(cfg), run_dir / "metrics.csv"
+        train(cfg, verbose=False, progress_queue=q, run_dir=run_dir)
+    return run_dir.name, run_dir / "metrics.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -149,18 +148,18 @@ class Experiment:
             self._delete_runs(results_dir)
 
         for i, cond in enumerate(self.conditions, 1):
-            pending = [
-                cfg for cfg in self._cfgs(cond)
-                if not _is_done(_run_dir(cfg, results_dir))
+            pending_seeds = [
+                s for s in self.seeds
+                if not _is_done(self._exp_run_dir(cond, s, results_dir))
             ]
 
             _console.rule(f"[bold]{cond.label}[/bold]  ({i}/{len(self.conditions)})")
 
-            if not pending:
+            if not pending_seeds:
                 _console.print(f"  [dim]{cond.label}[/dim] — all seeds cached\n")
                 continue
 
-            self._run_condition(cond.label, pending, workers, results_dir)
+            self._run_condition(cond, pending_seeds, workers, results_dir)
 
         return self._make_plot(show=show, x_axis=x_axis, results_dir=results_dir)
 
@@ -188,7 +187,7 @@ class Experiment:
         """
         cond = self._condition(label)
         cfg = self._make_cfg(cond, seed)
-        run_dir = _run_dir(cfg, results_dir)
+        run_dir = self._exp_run_dir(cond, seed, results_dir)
 
         if force and run_dir.exists():
             shutil.rmtree(run_dir)
@@ -196,7 +195,7 @@ class Experiment:
         if _is_done(run_dir):
             _console.print(f"[dim]{label} seed={seed} — cached at {run_dir}[/dim]")
         else:
-            train(cfg, log_dir=results_dir, verbose=True)
+            train(cfg, verbose=True, run_dir=run_dir)
 
         return run_dir / "metrics.csv"
 
@@ -240,38 +239,44 @@ class Experiment:
                 return c
         raise ValueError(f"Unknown condition {label!r}. Available: {[c.label for c in self.conditions]}")
 
+    def _exp_run_dir(self, cond: Condition, seed: int, results_dir: str = _RUNS_DIR) -> Path:
+        """Experiment-scoped run dir: {results_dir}/{exp_name}/{label}__seed{N}__{hash}/"""
+        cfg = self._make_cfg(cond, seed)
+        return Path(results_dir) / self.name / f"{cond.label}__seed{seed}__{_run_hash(cfg)}"
+
     def _paths(self, results_dir: str = _RUNS_DIR) -> dict[str, list[Path]]:
         return {
             cond.label: [
-                _run_dir(self._make_cfg(cond, s), results_dir) / "metrics.csv"
+                self._exp_run_dir(cond, s, results_dir) / "metrics.csv"
                 for s in self.seeds
             ]
             for cond in self.conditions
         }
 
-    def _out_dir(self, paths: dict[str, list[Path]], results_dir: str = _RUNS_DIR) -> Path:
-        all_ids = sorted(str(p.parent.name) for csvs in paths.values() for p in csvs)
-        digest = hashlib.sha1("\n".join(all_ids).encode()).hexdigest()[:8]
-        seed_key = "_".join(str(s) for s in sorted(self.seeds))
-        d = Path(results_dir) / "compare" / f"{self.name}__{self.env}__seeds_{seed_key}__{digest}"
+    def _out_dir(self, results_dir: str = _RUNS_DIR) -> Path:
+        """Experiment root directory — comparison.png and run subdirs live here."""
+        d = Path(results_dir) / self.name
         d.mkdir(parents=True, exist_ok=True)
         return d
 
     def _delete_runs(self, results_dir: str) -> None:
-        for cond in self.conditions:
-            for cfg in self._cfgs(cond):
-                run_dir = _run_dir(cfg, results_dir)
-                if run_dir.exists():
-                    shutil.rmtree(run_dir)
+        exp_dir = Path(results_dir) / self.name
+        if exp_dir.exists():
+            shutil.rmtree(exp_dir)
 
     def _run_condition(
         self,
-        label: str,
-        pending: list[EDERConfig],
+        cond: Condition,
+        pending_seeds: list[int],
         workers: int | None,
         results_dir: str,
     ) -> None:
-        n_workers = min(len(pending), workers or len(pending))
+        # Pre-compute (cfg, run_dir) pairs so workers know exactly where to write
+        jobs = [
+            (self._make_cfg(cond, s), self._exp_run_dir(cond, s, results_dir))
+            for s in pending_seeds
+        ]
+        n_workers = min(len(jobs), workers or len(jobs))
 
         progress = Progress(
             TextColumn("  [cyan]{task.description:<22}[/cyan]"),
@@ -280,11 +285,12 @@ class Experiment:
             TimeElapsedColumn(),
             TextColumn("{task.fields[stats]}"),
         )
+        # Key by run dir name (e.g. "EDER__seed42__4a3b2c") — matches RunLogger.run_id
         task_ids = {
-            _run_key(cfg): progress.add_task(
+            run_dir.name: progress.add_task(
                 f"seed={cfg.seed}", total=cfg.total_episodes, stats=""
             )
-            for cfg in pending
+            for cfg, run_dir in jobs
         }
 
         manager = multiprocessing.Manager()
@@ -316,25 +322,25 @@ class Experiment:
         with Live(progress, refresh_per_second=10, console=_console):
             listener.start()
             with ProcessPoolExecutor(max_workers=n_workers) as pool:
-                futures = {pool.submit(_train_worker, (cfg, q)): cfg for cfg in pending}
+                futures = {pool.submit(_train_worker, (cfg, run_dir, q)): (cfg, run_dir) for cfg, run_dir in jobs}
                 for future in as_completed(futures):
-                    cfg = futures[future]
-                    run_id, _ = future.result()
-                    if run_id in task_ids:
-                        progress.update(task_ids[run_id], completed=cfg.total_episodes)
+                    cfg, run_dir = futures[future]
+                    name, _ = future.result()
+                    if name in task_ids:
+                        progress.update(task_ids[name], completed=cfg.total_episodes)
             q.put(None)
             listener.join()
         manager.shutdown()
 
         elapsed = time.monotonic() - t0
         mins, secs = divmod(int(elapsed), 60)
-        _console.print(f"  [bold green]✓[/bold green] {label} — {mins}m {secs:02d}s\n")
+        _console.print(f"  [bold green]✓[/bold green] {cond.label} — {mins}m {secs:02d}s\n")
 
     def _make_plot(self, show: bool, x_axis: str, results_dir: str) -> Path:
         from rl_evo_lab.utils.compare import compare  # avoid circular import at module level
 
         paths = self._paths(results_dir)
-        out_dir = self._out_dir(paths, results_dir)
+        out_dir = self._out_dir(results_dir)
         manifest = {
             "experiment": self.name,
             "env": self.env,

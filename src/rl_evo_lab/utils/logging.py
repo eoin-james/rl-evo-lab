@@ -13,16 +13,17 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 from rl_evo_lab.utils.config import EDERConfig
 
 
-def _run_key(cfg: EDERConfig) -> str:
-    """Stable run key: seed{N}__{8-char hash of all HPs}."""
+def _run_hash(cfg: EDERConfig) -> str:
+    """6-char HP fingerprint. Same config → same hash. Used as dir suffix for safety."""
     hp = {f.name: getattr(cfg, f.name) for f in fields(cfg) if f.name not in ("use_wandb", "wandb_project")}
-    digest = hashlib.sha1(json.dumps(hp, sort_keys=True).encode()).hexdigest()[:8]
-    return f"seed{cfg.seed}__{digest}"
+    return hashlib.sha1(json.dumps(hp, sort_keys=True).encode()).hexdigest()[:6]
 
 
 def _run_dir(cfg: EDERConfig, results_dir: str | Path = "runs") -> Path:
-    """Canonical run directory: {results_dir}/{env_id}/seed{N}__{hash}/"""
-    return Path(results_dir) / cfg.env_id / _run_key(cfg)
+    """Fallback run directory for standalone train() calls (no experiment context).
+    Structure: {results_dir}/{env_id}/seed{N}__{hash}/
+    """
+    return Path(results_dir) / cfg.env_id / f"seed{cfg.seed}__{_run_hash(cfg)}"
 
 
 @dataclass
@@ -47,11 +48,12 @@ class RunLogger:
         log_dir: str = "runs",
         verbose: bool = True,
         progress_queue: Queue | None = None,
+        run_dir: Path | None = None,
     ) -> None:
         self.cfg = cfg
-        run_dir = _run_dir(cfg, log_dir)
+        run_dir = run_dir if run_dir is not None else _run_dir(cfg, log_dir)
         run_dir.mkdir(parents=True, exist_ok=True)
-        self.run_id = _run_key(cfg)  # kept for progress queue messages
+        self.run_id = run_dir.name  # used for progress queue messages
 
         self._csv_path = run_dir / "metrics.csv"
         self._csv_file = self._csv_path.open("a", newline="")

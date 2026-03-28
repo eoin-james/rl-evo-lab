@@ -10,6 +10,8 @@ from rl_evo_lab.buffer.replay_buffer import ReplayBuffer
 from rl_evo_lab.intrinsic.inverse_dynamics import InverseDynamicsNetwork
 from rl_evo_lab.learner.dqn import DQNLearner
 from rl_evo_lab.utils.config import EDERConfig
+from pathlib import Path
+
 from rl_evo_lab.utils.logging import EpisodeLog, RunLogger
 from rl_evo_lab.utils.seeding import seed_everything
 
@@ -19,6 +21,7 @@ def train(
     log_dir: str = "runs",
     verbose: bool = True,
     progress_queue: Queue | None = None,
+    run_dir: Path | None = None,
 ) -> None:
     seed_everything(cfg.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -27,7 +30,7 @@ def train(
     learner = DQNLearner(cfg, device)
     idn = InverseDynamicsNetwork(cfg, device) if cfg.use_es else None
     actor = ESActor(cfg, device) if cfg.use_es else None
-    logger = RunLogger(cfg, log_dir=log_dir, verbose=verbose, progress_queue=progress_queue)
+    logger = RunLogger(cfg, log_dir=log_dir, verbose=verbose, progress_queue=progress_queue, run_dir=run_dir)
 
     env_fn = lambda: gym.make(cfg.env_id)
     collect_env = gym.make(cfg.env_id)  # used by DQN collect_episode when use_es=False

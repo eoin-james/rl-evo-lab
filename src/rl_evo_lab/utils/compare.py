@@ -12,6 +12,7 @@ The CLI below is kept for backward compatibility::
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -103,8 +104,11 @@ def _any_novelty(paths: dict[str, list[Path]]) -> bool:
 
 
 def _detect_env(csv_list: list[Path]) -> str:
-    # path is {results_dir}/{env_id}/seed{N}__{hash}/metrics.csv
-    return csv_list[0].parent.parent.name
+    # Read env_id from the config.json saved alongside each run
+    cfg_path = csv_list[0].parent / "config.json"
+    if cfg_path.exists():
+        return json.loads(cfg_path.read_text()).get("env_id", "")
+    return ""
 
 # ---------------------------------------------------------------------------
 # compare() — the one public plotting function
