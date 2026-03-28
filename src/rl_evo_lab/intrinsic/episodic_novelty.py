@@ -1,26 +1,45 @@
 from __future__ import annotations
 
+from collections import deque
+
 import numpy as np
 
 
 class EpisodicNovelty:
-    """Episodic KNN novelty. Memory resets at the start of each episode."""
+    """KNN novelty memory.
 
-    def __init__(self, k: int) -> None:
+    Args:
+        k: Number of nearest neighbours to average.
+        capacity: If set, the memory becomes a rolling global buffer — the
+            oldest entries are evicted automatically (O(1)) and ``reset()``
+            is a no-op. If None (default), the memory is episodic and
+            ``reset()`` clears it.
+    """
+
+    def __init__(self, k: int, capacity: int | None = None) -> None:
         self.k = k
-        self._memory: list[np.ndarray] = []
+        self._capacity = capacity
+        self._memory: deque[np.ndarray] = deque(maxlen=capacity)
 
     def reset(self) -> None:
-        self._memory.clear()
+        if self._capacity is None:
+            self._memory.clear()
+        # Global buffers ignore reset() — they persist across episodes.
+
+    def query(self, embedding: np.ndarray) -> float:
+        """Return mean KNN distance without modifying memory."""
+        if len(self._memory) < self.k:
+            return 0.0
+        memory = np.stack(self._memory)
+        dists = np.linalg.norm(memory - embedding, axis=1)
+        return float(np.partition(dists, self.k - 1)[: self.k].mean())
+
+    def add(self, embedding: np.ndarray) -> None:
+        """Insert an embedding into memory."""
+        self._memory.append(embedding.copy())
 
     def score(self, embedding: np.ndarray) -> float:
-        """Return mean distance to k nearest neighbours, then add embedding to memory."""
-        if len(self._memory) < self.k:
-            self._memory.append(embedding.copy())
-            return 0.0
-        memory = np.stack(self._memory)  # (N, embed_dim)
-        dists = np.linalg.norm(memory - embedding, axis=1)
-        knn_dists = np.partition(dists, self.k - 1)[: self.k]
-        novelty = knn_dists.mean()
-        self._memory.append(embedding.copy())
-        return float(novelty)
+        """Query KNN distance then add embedding to memory (episodic convenience method)."""
+        novelty = self.query(embedding)
+        self.add(embedding)
+        return novelty
