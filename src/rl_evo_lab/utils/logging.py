@@ -53,7 +53,9 @@ class RunLogger:
         self._writer: csv.DictWriter | None = None
         self._write_header = self._csv_path.stat().st_size == 0
 
+        self._run_dir = run_dir
         self._write_config(run_dir)
+        self._write_status("running")
         self._wandb = self._init_wandb() if cfg.use_wandb else None
 
         # If a queue is provided, send progress updates to the parent process.
@@ -81,6 +83,9 @@ class RunLogger:
             cfg_path.write_text(
                 json.dumps({f.name: getattr(self.cfg, f.name) for f in fields(self.cfg)}, indent=2)
             )
+
+    def _write_status(self, status: str) -> None:
+        (self._run_dir / "status.json").write_text(json.dumps({"status": status}))
 
     def _init_wandb(self):
         try:
@@ -144,3 +149,4 @@ class RunLogger:
         self._csv_file.close()
         if self._wandb is not None:
             self._wandb.finish()
+        self._write_status("completed")
